@@ -166,8 +166,7 @@ Access your telemetry:
 4. Query with **Logs** (KQL) for detailed analysis
 5. Create **Dashboards** for key metrics
 
-## Additional Resources
+## References
 
 - [Application Insights Documentation](https://docs.microsoft.com/azure/azure-monitor/app/app-insights-overview)
 - [Azure Monitor Query (KQL) Reference](https://docs.microsoft.com/azure/data-explorer/kusto/query/)
-- See `examples/` for integration samples

@@ -100,9 +100,10 @@ BlobServiceClient blobServiceClient = new BlobServiceClientBuilder()
 - Set up proper logging and monitoring with Azure Monitor
 - Use lifecycle management policies for cost optimization
 
-## Additional Resources
+## References
 
+- file:///before-s3.java
+- file:///after-blob.java
+- file:///application.properties.template
 - [Azure Blob Storage Documentation](https://docs.microsoft.com/azure/storage/blobs/)
 - [Azure Storage SDK for Java](https://github.com/Azure/azure-sdk-for-java/tree/main/sdk/storage)
-- See `examples/` folder for complete code samples
-- See `config/` folder for configuration templates

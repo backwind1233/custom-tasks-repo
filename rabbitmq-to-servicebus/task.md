@@ -133,7 +133,6 @@ message.setMessageId(UUID.randomUUID().toString());
 - Handle duplicate detection with message IDs
 - Monitor with Azure Monitor
 
-## Additional Resources
+## References
 
 - [Azure Service Bus Documentation](https://docs.microsoft.com/azure/service-bus-messaging/)
-- See `examples/` for complete migration examples

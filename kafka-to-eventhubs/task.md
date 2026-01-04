@@ -96,8 +96,7 @@ Be aware of these differences:
 - Use managed identities in production
 - Consider Event Hubs Premium for high-throughput scenarios
 
-## Additional Resources
+## References
 
+- file:///kafka.properties.template
 - [Event Hubs for Kafka Documentation](https://docs.microsoft.com/azure/event-hubs/event-hubs-for-kafka-ecosystem-overview)
-- See `examples/` for complete code samples
-- See `config/` for configuration templates
