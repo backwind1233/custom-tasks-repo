@@ -1,3 +1,9 @@
+---
+id: kafka-to-eventhubs
+name: Migrate Kafka to Azure Event Hubs
+type: task
+---
+
 # Migrate Kafka to Azure Event Hubs
 
 ## Overview

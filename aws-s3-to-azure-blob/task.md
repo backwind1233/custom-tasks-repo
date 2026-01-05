@@ -1,3 +1,9 @@
+---
+id: aws-s3-to-azure-blob
+name: Migrate AWS S3 to Azure Blob Storage
+type: task
+---
+
 # Migrate AWS S3 to Azure Blob Storage
 
 ## Overview

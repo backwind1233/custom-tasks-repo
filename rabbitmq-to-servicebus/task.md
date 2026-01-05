@@ -1,3 +1,9 @@
+---
+id: rabbitmq-to-servicebus
+name: Migrate RabbitMQ to Azure Service Bus
+type: task
+---
+
 # Migrate RabbitMQ to Azure Service Bus
 
 ## Overview

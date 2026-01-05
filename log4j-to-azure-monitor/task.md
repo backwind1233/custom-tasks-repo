@@ -1,3 +1,9 @@
+---
+id: log4j-to-azure-monitor
+name: Integrate Azure Monitor Application Insights
+type: task
+---
+
 # Integrate Azure Monitor Application Insights
 
 ## Overview
