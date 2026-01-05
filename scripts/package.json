@@ -1,0 +1,11 @@
+{
+  "name": "custom-tasks-repo",
+  "version": "1.0.0",
+  "description": "Custom migration tasks repository",
+  "scripts": {
+    "start": "node generate-metadata.js"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3"
+  }
+}
