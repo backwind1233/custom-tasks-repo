@@ -13,7 +13,7 @@
     {
       "id": "log4j-to-azure-monitor",
       "name": "Integrate Azure Monitor Application Insights",
-      "path": "log4j-to-azure-monitor"
+      "path": "log4j-to-azure-monitor-03"
     },
     {
       "id": "rabbitmq-to-servicebus",
