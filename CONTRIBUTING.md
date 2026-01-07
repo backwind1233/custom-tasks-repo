@@ -85,31 +85,21 @@ type: task
 
 **Prompt:**
 
-Brief description of what this task accomplishes. This is the main prompt that will guide the migration.
-
-## Prerequisites
-- Required software/versions
-- Required accounts/access
-
-## Migration Steps
-
-### 1. Update Dependencies
-Explain dependency changes...
-
-### 2. Update Configuration
-Explain configuration changes...
-
-### 3. Transform Code
-Explain code transformations...
+Describe what this task accomplishes and the technologies involved. Include migration steps, prerequisites, and any important notes here.
 
 **References:**
+- file:///before-example.java
+- file:///after-example.java
 - https://docs.example.com/migration-guide
-- https://docs.example.com/api-reference
 ```
 
 **Required Sections:**
-- `**Prompt:**` - The main task description (required)
-- `**References:**` - List of reference URLs (recommended)
+
+| Section | Required | Description |
+|---------|----------|-------------|
+| YAML Frontmatter | ✅ Yes | Must include `id`, `name`, `type` fields |
+| `**Prompt:**` | ✅ Yes | Main task description/prompt |
+| `**References:**` | ⚠️ Recommended | File and URL references |
 
 ### Step 4: Add Supporting Files (Optional)
 

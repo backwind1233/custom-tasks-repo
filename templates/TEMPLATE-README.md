@@ -62,14 +62,13 @@ npm install
    type: task
    ---
 
-   # My First Migration Task
+   **Prompt:**
 
-   ## Overview
-   Describe what this task does...
+   Describe what this task does and the migration steps involved.
 
-   ## Steps
-   1. First step
-   2. Second step
+   **References:**
+   - file:///example.java
+   - https://docs.example.com/guide
    ```
 
 3. Generate metadata:
@@ -117,28 +116,14 @@ name: Human Readable Name
 type: task
 ---
 
-# Task Title
+**Prompt:**
 
-## Overview
-Brief description of the migration task.
+Describe the migration task, including prerequisites, migration steps, and verification instructions.
 
-## Prerequisites
-- Required tools/versions
-- Required access/accounts
-
-## Migration Steps
-
-### Step 1: Description
-Details...
-
-### Step 2: Description
-Details...
-
-## Verification
-How to verify the migration was successful.
-
-## Common Issues
-Known issues and solutions.
+**References:**
+- file:///before-example.java
+- file:///after-example.java
+- https://docs.example.com/migration-guide
 ```
 
 ### Frontmatter Fields
