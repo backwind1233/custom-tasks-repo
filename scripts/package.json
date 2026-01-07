@@ -7,7 +7,9 @@
     "generate": "node generate-metadata.js",
     "validate": "node validate-task.js ..",
     "security-scan": "node security-scan.js ..",
-    "check": "npm run validate && npm run security-scan"
+    "guardrails-scan": "python3 guardrails-scan.py",
+    "check": "npm run validate && npm run security-scan",
+    "check:all": "npm run validate && npm run security-scan && npm run guardrails-scan"
   },
   "dependencies": {
     "gray-matter": "^4.0.3"

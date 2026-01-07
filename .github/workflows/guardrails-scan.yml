@@ -1,0 +1,541 @@
+name: Guardrails Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tasks/**'
+  push:
+    branches: [main]
+    paths:
+      - 'tasks/**'
+  workflow_dispatch:
+
+jobs:
+  guardrails-scan:
+    name: Guardrails AI Safety Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Guardrails dependencies
+        run: |
+          pip install guardrails-ai
+          pip install transformers torch
+          # Install prompt injection detection hub
+          guardrails hub install hub://guardrails/detect_prompt_injection --quiet || true
+          guardrails hub install hub://guardrails/toxic_language --quiet || true
+          guardrails hub install hub://guardrails/secrets_present --quiet || true
+
+      - name: Get changed task files
+        if: github.event_name == 'pull_request'
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            tasks/**/task.md
+
+      - name: Create Guardrails scanner script
+        run: |
+          cat > guardrails_scan.py << 'PYTHON_SCRIPT'
+          #!/usr/bin/env python3
+          """
+          Guardrails AI Security Scanner for Task Files
+          
+          Scans task.md files for:
+          - Prompt injection attempts
+          - Toxic/harmful content
+          - Secrets/credentials
+          - Malicious patterns
+          """
+          
+          import os
+          import sys
+          import json
+          import re
+          from pathlib import Path
+          from dataclasses import dataclass, asdict
+          from typing import List, Optional
+          
+          # Try to import guardrails components
+          try:
+              from guardrails import Guard
+              from guardrails.hub import DetectPromptInjection, ToxicLanguage, SecretsPresent
+              GUARDRAILS_AVAILABLE = True
+          except ImportError:
+              GUARDRAILS_AVAILABLE = False
+              print("Warning: Guardrails hub validators not available, using fallback patterns")
+          
+          @dataclass
+          class Finding:
+              severity: str
+              rule_id: str
+              rule_name: str
+              description: str
+              file: str
+              line: int
+              match: str
+          
+          class GuardrailsScanner:
+              """Scanner using Guardrails AI for prompt safety"""
+              
+              # Fallback patterns if Guardrails not available
+              PROMPT_INJECTION_PATTERNS = [
+                  (r'ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?|rules?)', 'Instruction override'),
+                  (r'disregard\s+(all\s+)?(previous|above|prior)', 'Instruction disregard'),
+                  (r'forget\s+(all\s+)?(previous|above|prior|everything)', 'Memory wipe attempt'),
+                  (r'you\s+are\s+now\s+(a|an|the)', 'Role reassignment'),
+                  (r'pretend\s+(you\s+are|to\s+be)', 'Role pretending'),
+                  (r'act\s+as\s+(if|a|an|the)', 'Role acting'),
+                  (r'from\s+now\s+on,?\s+you', 'Temporal role change'),
+                  (r'new\s+instructions?:', 'New instruction injection'),
+                  (r'system\s*:\s*', 'System prompt injection'),
+                  (r'<\|?system\|?>', 'System tag injection'),
+                  (r'\[INST\]|\[\/INST\]', 'Instruction tag injection'),
+                  (r'###\s*(Human|Assistant|System):', 'Role marker injection'),
+                  (r'Do\s+not\s+follow\s+(the\s+)?(above|previous)', 'Negative instruction'),
+                  (r'override\s+(all\s+)?(safety|restrictions?|rules?)', 'Safety override'),
+                  (r'jailbreak|DAN|do\s+anything\s+now', 'Jailbreak attempt'),
+                  (r'developer\s+mode|god\s+mode|admin\s+mode', 'Privilege escalation'),
+              ]
+              
+              DANGEROUS_COMMAND_PATTERNS = [
+                  (r'rm\s+-rf\s+/', 'Recursive delete root'),
+                  (r'mkfs\s+', 'Filesystem format'),
+                  (r'dd\s+if=.+of=/dev/', 'Direct disk write'),
+                  (r'chmod\s+777\s+/', 'Dangerous permission change'),
+                  (r'curl.+\|\s*(sh|bash)', 'Remote code execution'),
+                  (r'wget.+\|\s*(sh|bash)', 'Remote code execution'),
+                  (r'eval\s*\(', 'Dynamic code execution'),
+                  (r'exec\s*\(', 'Process execution'),
+              ]
+              
+              SECRET_PATTERNS = [
+                  (r'(?i)(password|passwd|pwd)\s*[=:]\s*["\'][^"\'${\[\]<]+["\']', 'Hardcoded password'),
+                  (r'(?i)(api[_-]?key|apikey)\s*[=:]\s*["\'][^"\'${\[\]<]+["\']', 'Hardcoded API key'),
+                  (r'(?i)(secret|token)\s*[=:]\s*["\'][^"\'${\[\]<]+["\']', 'Hardcoded secret'),
+                  (r'(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}', 'Bearer token'),
+                  (r'-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----', 'Private key'),
+                  (r'ghp_[a-zA-Z0-9]{36}', 'GitHub PAT'),
+                  (r'sk-[a-zA-Z0-9]{48}', 'OpenAI API key'),
+              ]
+              
+              # Patterns to skip (placeholders)
+              SKIP_PATTERNS = [
+                  r'<your-',
+                  r'\$\{',
+                  r'\$[A-Z_]+',
+                  r'your-.*-here',
+                  r'example',
+                  r'placeholder',
+                  r'xxx+',
+                  r'\*\*\*',
+                  r'AWS_ACCESS_KEY',
+                  r'AWS_SECRET',
+                  r'AZURE_',
+              ]
+              
+              def __init__(self):
+                  self.findings: List[Finding] = []
+                  self.guard = None
+                  
+                  if GUARDRAILS_AVAILABLE:
+                      try:
+                          self.guard = Guard().use_many(
+                              DetectPromptInjection(on_fail="noop"),
+                              ToxicLanguage(on_fail="noop"),
+                              SecretsPresent(on_fail="noop"),
+                          )
+                      except Exception as e:
+                          print(f"Warning: Could not initialize Guardrails: {e}")
+              
+              def should_skip(self, text: str) -> bool:
+                  """Check if text matches skip patterns (placeholders)"""
+                  for pattern in self.SKIP_PATTERNS:
+                      if re.search(pattern, text, re.IGNORECASE):
+                          return True
+                  return False
+              
+              def scan_with_patterns(self, content: str, file_path: str) -> List[Finding]:
+                  """Scan using regex patterns"""
+                  findings = []
+                  lines = content.split('\n')
+                  
+                  # Prompt injection patterns (critical)
+                  for pattern, name in self.PROMPT_INJECTION_PATTERNS:
+                      for i, line in enumerate(lines, 1):
+                          for match in re.finditer(pattern, line, re.IGNORECASE):
+                              if not self.should_skip(match.group()):
+                                  findings.append(Finding(
+                                      severity='critical',
+                                      rule_id='PROMPT_INJECTION',
+                                      rule_name=f'Prompt Injection: {name}',
+                                      description=f'Detected potential prompt injection attempt',
+                                      file=file_path,
+                                      line=i,
+                                      match=match.group()[:100]
+                                  ))
+                  
+                  # Dangerous command patterns (high)
+                  for pattern, name in self.DANGEROUS_COMMAND_PATTERNS:
+                      for i, line in enumerate(lines, 1):
+                          for match in re.finditer(pattern, line, re.IGNORECASE):
+                              findings.append(Finding(
+                                  severity='high',
+                                  rule_id='DANGEROUS_CMD',
+                                  rule_name=f'Dangerous Command: {name}',
+                                  description=f'Detected potentially dangerous command',
+                                  file=file_path,
+                                  line=i,
+                                  match=match.group()[:100]
+                              ))
+                  
+                  # Secret patterns (high)
+                  for pattern, name in self.SECRET_PATTERNS:
+                      for i, line in enumerate(lines, 1):
+                          for match in re.finditer(pattern, line):
+                              if not self.should_skip(match.group()):
+                                  findings.append(Finding(
+                                      severity='high',
+                                      rule_id='SECRET_DETECTED',
+                                      rule_name=f'Secret: {name}',
+                                      description=f'Detected potential hardcoded credential',
+                                      file=file_path,
+                                      line=i,
+                                      match=match.group()[:50] + '...'
+                                  ))
+                  
+                  return findings
+              
+              def scan_with_guardrails(self, content: str, file_path: str) -> List[Finding]:
+                  """Scan using Guardrails AI"""
+                  findings = []
+                  
+                  if not self.guard:
+                      return findings
+                  
+                  try:
+                      # Run guardrails validation
+                      result = self.guard.validate(content)
+                      
+                      if result.validation_passed is False:
+                          for error in result.error_spans or []:
+                              findings.append(Finding(
+                                  severity='critical',
+                                  rule_id='GUARDRAILS',
+                                  rule_name=f'Guardrails: {error.get("validator_name", "Unknown")}',
+                                  description=error.get('error_message', 'Validation failed'),
+                                  file=file_path,
+                                  line=1,
+                                  match=str(error.get('value', ''))[:100]
+                              ))
+                  except Exception as e:
+                      print(f"Warning: Guardrails scan error for {file_path}: {e}")
+                  
+                  return findings
+              
+              def scan_file(self, file_path: str) -> List[Finding]:
+                  """Scan a single file"""
+                  try:
+                      with open(file_path, 'r', encoding='utf-8') as f:
+                          content = f.read()
+                  except Exception as e:
+                      print(f"Error reading {file_path}: {e}")
+                      return []
+                  
+                  findings = []
+                  
+                  # Pattern-based scanning (always run)
+                  findings.extend(self.scan_with_patterns(content, file_path))
+                  
+                  # Guardrails AI scanning (if available)
+                  findings.extend(self.scan_with_guardrails(content, file_path))
+                  
+                  return findings
+              
+              def scan_directory(self, directory: str, files: Optional[List[str]] = None) -> dict:
+                  """Scan directory or specific files"""
+                  
+                  if files:
+                      # Scan specific files
+                      for file_path in files:
+                          if os.path.exists(file_path):
+                              self.findings.extend(self.scan_file(file_path))
+                  else:
+                      # Scan all task.md files
+                      tasks_dir = Path(directory) / 'tasks'
+                      if tasks_dir.exists():
+                          for task_md in tasks_dir.glob('*/task.md'):
+                              self.findings.extend(self.scan_file(str(task_md)))
+                  
+                  return self.summarize()
+              
+              def summarize(self) -> dict:
+                  """Summarize findings"""
+                  summary = {
+                      'critical': [],
+                      'high': [],
+                      'medium': [],
+                      'low': [],
+                      'total': len(self.findings)
+                  }
+                  
+                  for finding in self.findings:
+                      summary[finding.severity].append(asdict(finding))
+                  
+                  return summary
+              
+              def generate_report(self, summary: dict) -> str:
+                  """Generate markdown report"""
+                  report = ['# 🛡️ Guardrails Security Scan Report\n']
+                  
+                  # Summary table
+                  report.append('## Summary\n')
+                  report.append('| Severity | Count |')
+                  report.append('|----------|-------|')
+                  report.append(f'| 🔴 Critical | {len(summary["critical"])} |')
+                  report.append(f'| 🟠 High | {len(summary["high"])} |')
+                  report.append(f'| 🟡 Medium | {len(summary["medium"])} |')
+                  report.append(f'| 🟢 Low | {len(summary["low"])} |')
+                  report.append(f'| **Total** | **{summary["total"]}** |\n')
+                  
+                  # Status
+                  if summary['critical'] or summary['high']:
+                      report.append('> ❌ **FAILED**: Critical or high severity issues found\n')
+                  elif summary['medium']:
+                      report.append('> ⚠️ **WARNING**: Medium severity issues found\n')
+                  else:
+                      report.append('> ✅ **PASSED**: No significant security issues found\n')
+                  
+                  # Guardrails status
+                  if GUARDRAILS_AVAILABLE:
+                      report.append('> 🛡️ Guardrails AI: **Active**\n')
+                  else:
+                      report.append('> 🛡️ Guardrails AI: *Fallback mode (pattern-based)*\n')
+                  
+                  # Details
+                  severity_labels = {
+                      'critical': '🔴 Critical',
+                      'high': '🟠 High',
+                      'medium': '🟡 Medium',
+                      'low': '🟢 Low'
+                  }
+                  
+                  for severity in ['critical', 'high', 'medium', 'low']:
+                      if summary[severity]:
+                          report.append(f'\n## {severity_labels[severity]} Issues\n')
+                          for finding in summary[severity]:
+                              report.append(f'### {finding["rule_id"]}: {finding["rule_name"]}')
+                              report.append(f'- **File:** {finding["file"]}:{finding["line"]}')
+                              report.append(f'- **Description:** {finding["description"]}')
+                              report.append(f'- **Match:** `{finding["match"]}`\n')
+                  
+                  return '\n'.join(report)
+          
+          def main():
+              import argparse
+              
+              parser = argparse.ArgumentParser(description='Guardrails Security Scanner')
+              parser.add_argument('directory', nargs='?', default='.', help='Directory to scan')
+              parser.add_argument('files', nargs='*', help='Specific files to scan')
+              parser.add_argument('--json', action='store_true', help='Output JSON format')
+              
+              args = parser.parse_args()
+              
+              scanner = GuardrailsScanner()
+              
+              if args.files:
+                  summary = scanner.scan_directory(args.directory, args.files)
+              else:
+                  summary = scanner.scan_directory(args.directory)
+              
+              if args.json:
+                  print(json.dumps({
+                      'passed': not (summary['critical'] or summary['high']),
+                      'summary': {k: len(v) if isinstance(v, list) else v for k, v in summary.items()},
+                      'findings': [asdict(f) for f in scanner.findings]
+                  }, indent=2))
+              else:
+                  print(scanner.generate_report(summary))
+              
+              # Exit code
+              if summary['critical'] or summary['high']:
+                  sys.exit(1)
+              sys.exit(0)
+          
+          if __name__ == '__main__':
+              main()
+          PYTHON_SCRIPT
+          
+          chmod +x guardrails_scan.py
+
+      - name: Run Guardrails scan (PR - changed files)
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.all_changed_files != ''
+        id: guardrails-scan-pr
+        run: |
+          python guardrails_scan.py . ${{ steps.changed-files.outputs.all_changed_files }} > guardrails-report.md 2>&1 || SCAN_EXIT=$?
+          python guardrails_scan.py --json . ${{ steps.changed-files.outputs.all_changed_files }} > guardrails-report.json 2>&1 || true
+          
+          cat guardrails-report.md
+          
+          if [ "${SCAN_EXIT:-0}" -ne 0 ]; then
+            echo "scan_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "scan_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Guardrails scan (full)
+        if: github.event_name != 'pull_request' || steps.changed-files.outputs.all_changed_files == ''
+        id: guardrails-scan-full
+        run: |
+          python guardrails_scan.py . > guardrails-report.md 2>&1 || SCAN_EXIT=$?
+          python guardrails_scan.py --json . > guardrails-report.json 2>&1 || true
+          
+          cat guardrails-report.md
+          
+          if [ "${SCAN_EXIT:-0}" -ne 0 ]; then
+            echo "scan_passed=false" >> $GITHUB_OUTPUT
+          else
+            echo "scan_passed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment PR with Guardrails results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '';
+            
+            try {
+              report = fs.readFileSync('guardrails-report.md', 'utf8');
+            } catch (e) {
+              report = 'No Guardrails issues to report.';
+            }
+            
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Guardrails Security Scan Report')
+            );
+            
+            const body = report;
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Upload Guardrails report
+        uses: actions/upload-artifact@v4
+        with:
+          name: guardrails-report
+          path: |
+            guardrails-report.md
+            guardrails-report.json
+          retention-days: 30
+
+      - name: Fail on critical/high issues
+        if: steps.guardrails-scan-pr.outputs.scan_passed == 'false' || steps.guardrails-scan-full.outputs.scan_passed == 'false'
+        run: |
+          echo "❌ Guardrails security scan failed!"
+          echo "Critical or high severity prompt safety issues detected."
+          exit 1
+
+  llm-safety-check:
+    name: LLM Safety Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check for LLM safety issues
+        run: |
+          echo "🔍 Checking for LLM safety patterns..."
+          
+          ISSUES_FOUND=0
+          
+          # Check for role manipulation patterns
+          echo "Checking for role manipulation..."
+          if grep -rE "(you are now|pretend to be|act as if|from now on you)" --include="*.md" tasks/ 2>/dev/null | grep -v "^Binary"; then
+            echo "⚠️ Found potential role manipulation patterns"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          # Check for instruction override patterns
+          echo "Checking for instruction overrides..."
+          if grep -rE "(ignore|disregard|forget).*(previous|above|prior).*(instruction|prompt|rule)" --include="*.md" tasks/ 2>/dev/null | grep -v "^Binary"; then
+            echo "⚠️ Found potential instruction override patterns"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          # Check for system prompt injection
+          echo "Checking for system prompt injection..."
+          if grep -rE "(\[INST\]|\[/INST\]|<\|system\|>|###\s*(System|Human|Assistant):)" --include="*.md" tasks/ 2>/dev/null | grep -v "^Binary"; then
+            echo "⚠️ Found potential system prompt injection markers"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          # Check for jailbreak keywords
+          echo "Checking for jailbreak patterns..."
+          if grep -riE "(jailbreak|DAN mode|developer mode enabled|god mode|unlimited mode)" --include="*.md" tasks/ 2>/dev/null | grep -v "^Binary"; then
+            echo "⚠️ Found potential jailbreak patterns"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          # Check for hidden Unicode characters
+          echo "Checking for hidden characters..."
+          if grep -rP "[\x{200B}-\x{200D}\x{FEFF}\x{00AD}]" --include="*.md" tasks/ 2>/dev/null; then
+            echo "⚠️ Found hidden Unicode characters (zero-width, soft hyphen, etc.)"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          # Check for homoglyph attacks
+          echo "Checking for homoglyph patterns..."
+          if grep -rP "[^\x00-\x7F]" --include="*.md" tasks/ 2>/dev/null | grep -E "(ignore|system|admin|root)" | head -5; then
+            echo "⚠️ Found potential homoglyph attacks (non-ASCII in sensitive words)"
+            ISSUES_FOUND=$((ISSUES_FOUND + 1))
+          fi
+          
+          echo ""
+          if [ $ISSUES_FOUND -gt 0 ]; then
+            echo "⚠️ Found $ISSUES_FOUND potential LLM safety issue categories"
+            echo "Please review the flagged content manually"
+          else
+            echo "✅ No LLM safety issues detected"
+          fi
