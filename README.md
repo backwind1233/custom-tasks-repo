@@ -195,10 +195,11 @@ For teams that want to maintain their own private task repository, see [PRIVATE-
 Tasks in this repository are prompts used by AI agents. We take security seriously:
 
 - **Automated scanning** for prompt injection attempts
-- **Pattern detection** for malicious commands
+- **Guardrails AI** for LLM safety validation (detects harmful prompts, jailbreak attempts)
+- **Pattern detection** for malicious commands and hardcoded secrets
 - **Manual review** of all contributions
 
-See [SECURITY.md](SECURITY.md) for our security policy and how to report vulnerabilities.
+All PRs are automatically scanned before merge. See [SECURITY.md](SECURITY.md) for our security policy.
 
 ## Contributing
 
