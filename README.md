@@ -74,7 +74,7 @@ tasks/
 
 ### task.md Requirements
 
-The `task.md` file must include YAML frontmatter:
+The `task.md` file must include YAML frontmatter and follow the standard format:
 
 ```markdown
 ---
@@ -83,18 +83,41 @@ name: Human Readable Task Name
 type: task
 ---
 
-# Task Title
+**Prompt:**
 
-Your task content in Markdown format...
+Your task prompt content here...
+
+**References:**
+- file:///example.java
+- git+file:///changes.diff
+- https://docs.microsoft.com/azure/...
 ```
 
-#### Required Frontmatter Fields
+#### Required Sections
+
+| Section | Required | Description |
+|---------|----------|-------------|
+| YAML Frontmatter | ✅ Yes | Must include `id`, `name`, `type` fields |
+| `**Prompt:**` | ✅ Yes | Main task description/prompt |
+| `**References:**` | ⚠️ Recommended | List of file and URL references |
+
+#### Frontmatter Fields
 
 | Field | Description | Example |
 |-------|-------------|---------|
 | `id` | Unique identifier (should match folder name) | `aws-s3-to-azure-blob` |
 | `name` | Human-readable display name | `Migrate AWS S3 to Azure Blob Storage` |
 | `type` | Task type (currently only `task`) | `task` |
+
+#### References Format
+
+The `**References:**` section links to supporting files and documentation:
+
+- **Local files**: `file:///filename.java` - References files in the same task folder
+- **Diff files**: `git+file:///changes.diff` - Git diff files for code changes
+- **URLs**: `https://docs.example.com/` - External documentation links
+
+> **Note:** When you run `npm start`, the script automatically syncs file references with actual files in the task folder.
 
 ### Additional Files
 
@@ -105,7 +128,7 @@ You can include any supporting files in your task folder:
 - **Git diff files** (`.diff`, `.patch`)
 - **Documentation** (`.md`)
 
-All files should be placed directly in the task folder (no subdirectories).
+All files should be placed directly in the task folder.
 
 ## Development
 
