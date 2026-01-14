@@ -109,6 +109,12 @@ Your task prompt content here...
 | `name` | Human-readable display name | `Migrate AWS S3 to Azure Blob Storage` |
 | `type` | Task type (currently only `task`) | `task` |
 
+#### Task Constraints
+
+- **Unique ID**: Each task must have a unique `id` in the frontmatter. Duplicate IDs are not allowed and will cause the metadata generation to fail.
+- **ID Format**: Task IDs should be lowercase with hyphens (e.g., `kafka-to-eventhubs`).
+- **Folder-ID Match**: The task folder name should match the `id` field in the frontmatter.
+
 #### References Format
 
 The `**References:**` section links to supporting files and documentation:

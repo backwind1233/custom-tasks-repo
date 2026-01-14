@@ -42,6 +42,16 @@ function processTask(rootDir, taskFolderName) {
   const { data } = matter(fileContent);
 
   if (data.id && data.name) {
+    // Check if folder name matches the task ID
+    if (data.id !== taskFolderName) {
+      return {
+        id: data.id,
+        name: data.name,
+        path: `${TASKS_DIR}/${taskFolderName}`,
+        folderMismatch: true,
+        folderName: taskFolderName,
+      };
+    }
     return {
       id: data.id,
       name: data.name,
@@ -88,6 +98,17 @@ function generateMetadata() {
     } catch (error) {
       console.error(`❌ Error processing ${entry.name}:`, error.message);
     }
+  }
+
+  // Check for folder name and ID mismatches
+  const mismatchedTasks = tasks.filter(task => task.folderMismatch);
+  if (mismatchedTasks.length > 0) {
+    console.error('\n❌ Error: Task folder name does not match task ID:');
+    mismatchedTasks.forEach(task => {
+      console.error(`   - Folder "${task.folderName}" has task ID "${task.id}"`);
+    });
+    console.error('\nThe folder name must match the task ID in the frontmatter. Please rename the folder or update the ID.');
+    process.exit(1);
   }
 
   // Check for duplicate task IDs
