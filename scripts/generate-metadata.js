@@ -90,6 +90,22 @@ function generateMetadata() {
     }
   }
 
+  // Check for duplicate task IDs
+  const idCounts = {};
+  for (const task of tasks) {
+    idCounts[task.id] = (idCounts[task.id] || 0) + 1;
+  }
+  const duplicateIds = Object.entries(idCounts)
+    .filter(([id, count]) => count > 1)
+    .map(([id, count]) => `"${id}" (appears ${count} times)`);
+
+  if (duplicateIds.length > 0) {
+    console.error('\n❌ Error: Duplicate task IDs found:');
+    duplicateIds.forEach(dup => console.error(`   - ${dup}`));
+    console.error('\nEach task must have a unique ID. Please fix the duplicate IDs and try again.');
+    process.exit(1);
+  }
+
   // Sort tasks by id
   tasks.sort((a, b) => a.id.localeCompare(b.id));
 
