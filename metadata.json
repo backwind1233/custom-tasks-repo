@@ -6,6 +6,11 @@
       "path": "tasks/aws-s3-to-azure-blob"
     },
     {
+      "id": "example",
+      "name": "Migrate example",
+      "path": "tasks/example"
+    },
+    {
       "id": "kafka-to-eventhubs",
       "name": "Migrate Kafka to Azure Event Hubs",
       "path": "tasks/kafka-to-eventhubs"
